@@ -1,7 +1,6 @@
 import hashlib
 import hmac
 import json
-import time
 
 import paho.mqtt.client as mqtt
 from fastapi import FastAPI
@@ -37,18 +36,28 @@ def on_message(c, userdata, msg):
         print("REJECTED ->", msg.payload)
         db.save_rejected(msg.payload)
         c.publish("sentinel/alerts", json.dumps({
-            "timestamp": int(time.time()),
-            "source": "GATEWAY_SECURITY_FILTER",
-            "event_type": "CYBER_SPOOFING",
+            "code": "CYBER_SPOOFING",
+            "source": "fastapi",
+            "severity": "critical",
+            "message": "Trame rejetée : signature invalide ou trame malformée",
         }))
         return
 
     db.save_reading(frame)
+    m = frame["metrics"]
+    # Flat format from the contract table, read by Telegraf -> Grafana
+    c.publish("sentinel/validated", json.dumps({
+        "device_id": frame["device_id"],
+        "temp": m["temperature"],
+        "humidity": m["humidity"],
+        "distance": m["distance_cm"],
+        "presence": m["motion_detected"],
+    }))
     send_to_anomaly_model(frame)
 
 
 def on_connect(c, userdata, flags, reason_code, properties):
-    print("Connected to broker")
+    print("Connected to broker:", reason_code)
     c.subscribe("sentinel/telemetry")  # here so it re-subscribes after a broker restart
 
 
