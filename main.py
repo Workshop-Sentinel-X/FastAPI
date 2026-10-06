@@ -6,6 +6,8 @@ import time
 import paho.mqtt.client as mqtt
 from fastapi import FastAPI
 
+import db
+
 SECRET = b"dev-secret-change-me"  # same key as the ESP8266
 BROKER = "localhost"
 
@@ -33,6 +35,7 @@ def on_message(c, userdata, msg):
 
     if not valid:
         print("REJECTED ->", msg.payload)
+        db.save_rejected(msg.payload)
         c.publish("sentinel/alerts", json.dumps({
             "timestamp": int(time.time()),
             "source": "GATEWAY_SECURITY_FILTER",
@@ -40,6 +43,7 @@ def on_message(c, userdata, msg):
         }))
         return
 
+    db.save_reading(frame)
     send_to_anomaly_model(frame)
 
 
@@ -52,5 +56,15 @@ def on_connect(c, userdata, flags, reason_code, properties):
 def start_mqtt():
     client.on_connect = on_connect
     client.on_message = on_message
-    client.connect(BROKER, 1883)
+    client.connect_async(BROKER, 1883)  # doesn't crash if the broker is down; keeps retrying
     client.loop_start()
+
+
+@app.get("/readings")
+def readings(limit: int = 100):
+    return db.latest("readings", limit)
+
+
+@app.get("/rejected")
+def rejected(limit: int = 50):
+    return db.latest("rejected", limit)
