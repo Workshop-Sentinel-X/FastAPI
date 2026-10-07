@@ -1,16 +1,30 @@
 import hashlib
 import hmac
 import json
+import os
 
 import paho.mqtt.client as mqtt
 from fastapi import FastAPI
+from contextlib import asynccontextmanager
 
 import db
 
-SECRET = b"dev-secret-change-me"  # same key as the ESP8266
-BROKER = "localhost"
+SECRET = os.getenv("HMAC_SECRET", "dev-secret-change-me").encode()
+BROKER = os.getenv("MQTT_HOST", "mosquitto")
+PORT = int(os.getenv("MQTT_PORT", "1883"))
+MQTT_USER = os.getenv("MQTT_USER", "api")
+MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "api-sx")
 
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+client.username_pw_set(MQTT_USER, MQTT_PASSWORD)
+
+# @asynccontextmanager
+# async def lifespan(app: FastAPI):
+#     # Code exécuté au démarrage
+#     seed_database()
+
+#     yield
+
 app = FastAPI()
 
 
@@ -61,12 +75,13 @@ def on_connect(c, userdata, flags, reason_code, properties):
     c.subscribe("sentinel/telemetry")  # here so it re-subscribes after a broker restart
 
 
-@app.on_event("startup")
+@app.post("/seed_database")
 def start_mqtt():
     client.on_connect = on_connect
     client.on_message = on_message
-    client.connect_async(BROKER, 1883)  # doesn't crash if the broker is down; keeps retrying
+    client.connect_async(BROKER, PORT)  # doesn't crash if the broker is down; keeps retrying
     client.loop_start()
+
 
 
 @app.get("/readings")
